@@ -66,3 +66,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+#qr-reader > video {
+  object-fit: cover;
+  width: 100% !important;
+  height: 300px !important;
+  max-height: 350px;
+}
+
