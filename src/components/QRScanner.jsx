@@ -48,31 +48,30 @@ const QRScanner = () => {
 
   // start scanner di useEffect setelah <div id="qr-reader" /> render
   useEffect(() => {
-    if (scanning) {
+    if (scanning && selectedCamera) {
       const timer = setTimeout(() => {
         const qrDiv = document.getElementById('qr-reader');
-        if (qrDiv && selectedCamera) {
+        if (qrDiv) {
           const html5QrCode = new Html5Qrcode('qr-reader');
           scannerRef.current = html5QrCode;
-         html5QrCode.start(
-  { deviceId: { exact: selectedCamera } },
-  { 
-    fps: 10, 
-    qrbox: { width: 250, height: 250 }, 
-    aspectRatio: 1.0,
-    facingMode: "environment",
-    videoConstraints: {
-      width: { ideal: 1280 }, 
-      height: { ideal: 720 }
-    }
-  },
-  onScanSuccess,
-  onScanError
-)
-.catch(err => {
-  setError('Gagal membuka kamera.');
-  setScanning(false);
-});
+          html5QrCode.start(
+            { deviceId: { exact: selectedCamera } },
+            { 
+              fps: 10, 
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0,
+              videoConstraints: {
+                width: { ideal: 1280 }, 
+                height: { ideal: 720 }
+              }
+            },
+            onScanSuccess,
+            onScanError
+          )
+            .catch(err => {
+              setError('Gagal membuka kamera.');
+              setScanning(false);
+            });
         }
       }, 200);
 
@@ -178,13 +177,11 @@ const QRScanner = () => {
     setScanning(false);
   };
 
-  const switchCamera = async () => {
-    if (cameras.length <= 1) return;
-    const curIdx = cameras.findIndex(c => c.id === selectedCamera);
-    const nextIdx = (curIdx + 1) % cameras.length;
-    const nextCam = cameras[nextIdx];
+  // -- Fitur Pilih Kamera (Depan/Belakang/semua yang tersedia)
+  const handleSelectCamera = (e) => {
     stopScanning();
-    setTimeout(() => setSelectedCamera(nextCam.id), 100);
+    setSelectedCamera(e.target.value);
+    setTimeout(() => setScanning(true), 200);
   };
 
   return (
@@ -270,22 +267,31 @@ const QRScanner = () => {
                   Mulai Scan
                 </Button>
 
+                {/* Select Kamera (Jika Ada Lebih dari 1) */}
                 {cameras.length > 1 && (
-                  <Button
-                    onClick={switchCamera}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    <SwitchCamera className="w-5 h-5 mr-2" />
-                    Ganti Kamera ({cameras.findIndex(c => c.id === selectedCamera) + 1}/{cameras.length})
-                  </Button>
+                  <div className="mt-4">
+                    <label className="block mb-1 font-semibold text-primary">
+                      Pilih Kamera:
+                    </label>
+                    <select
+                      value={selectedCamera}
+                      onChange={handleSelectCamera}
+                      className="border rounded-lg px-4 py-2 w-full"
+                    >
+                      {cameras.map(cam => (
+                        <option value={cam.id} key={cam.id}>
+                          {cam.label || 'Kamera'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
 
                 {error && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3"
+                    className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3 mt-4"
                   >
                     <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                     <div className="text-left">
@@ -310,16 +316,6 @@ const QRScanner = () => {
                 </div>
 
                 <div className="flex gap-2">
-                  {cameras.length > 1 && (
-                    <Button
-                      onClick={switchCamera}
-                      variant="outline"
-                      className="flex-1"
-                    >
-                      <SwitchCamera className="w-4 h-4 mr-2" />
-                      Ganti Kamera
-                    </Button>
-                  )}
                   <Button
                     onClick={stopScanning}
                     variant="outline"
@@ -329,6 +325,25 @@ const QRScanner = () => {
                     Batal
                   </Button>
                 </div>
+                {/* Select Kamera Aktif */}
+                {cameras.length > 1 && (
+                  <div>
+                    <label className="block mb-1 text-primary font-semibold">
+                      Ganti Kamera:
+                    </label>
+                    <select
+                      value={selectedCamera}
+                      onChange={handleSelectCamera}
+                      className="border rounded-lg px-4 py-2 w-full"
+                    >
+                      {cameras.map(cam => (
+                        <option value={cam.id} key={cam.id}>
+                          {cam.label || 'Kamera'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
