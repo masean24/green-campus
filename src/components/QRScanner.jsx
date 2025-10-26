@@ -232,4 +232,181 @@ const QRScanner = () => {
           <CardContent className="p-6">
             {/* Scanner View */}
             {!result && !scanning && (
-              <div className
+              <div className="text-center space-y-4">
+                <motion.div
+                  className="w-40 h-40 bg-gradient-to-br from-primary/10 to-primary/20 rounded-3xl flex items-center justify-center mx-auto mb-6"
+                  animate={{ scale: [1, 1.05, 1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <Camera className="w-20 h-20 text-primary" />
+                </motion.div>
+
+                <div className="space-y-2">
+                  <p className="text-gray-700 font-medium">
+                    📱 Pastikan QR code terlihat jelas
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Browser akan meminta izin akses kamera
+                  </p>
+                </div>
+
+                <Button
+                  onClick={() => {
+                    setScanning(true);
+                    setError(null);
+                  }}
+                  className="w-full bg-primary hover:bg-primary-dark h-14 text-lg font-semibold"
+                  size="lg"
+                >
+                  <Camera className="w-6 h-6 mr-2" />
+                  Mulai Scan
+                </Button>
+
+                {cameras.length > 1 && (
+                  <Button
+                    onClick={switchCamera}
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <SwitchCamera className="w-5 h-5 mr-2" />
+                    Ganti Kamera ({cameras.findIndex(c => c.id === selectedCamera) + 1}/{cameras.length})
+                  </Button>
+                )}
+
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3"
+                  >
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-red-700 mb-1">Error</p>
+                      <p className="text-xs text-red-600">{error}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+            )}
+
+            {/* Active Scanning */}
+            {scanning && (
+              <div className="space-y-4">
+                <div id="qr-reader" className="w-full rounded-lg overflow-hidden"></div>
+
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 text-center">
+                  <p className="text-sm font-semibold text-blue-700 mb-1">
+                    📷 Arahkan ke QR Code
+                  </p>
+                  <p className="text-xs text-blue-600">Scanner akan otomatis mendeteksi QR code</p>
+                </div>
+
+                <div className="flex gap-2">
+                  {cameras.length > 1 && (
+                    <Button
+                      onClick={switchCamera}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <SwitchCamera className="w-4 h-4 mr-2" />
+                      Ganti Kamera
+                    </Button>
+                  )}
+                  <Button
+                    onClick={stopScanning}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Batal
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Result View */}
+            {result && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center space-y-4"
+              >
+                {result.success ? (
+                  <>
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{
+                        delay: 0.2,
+                        type: 'spring',
+                        stiffness: 200
+                      }}
+                    >
+                      <CheckCircle className="w-28 h-28 text-green-500 mx-auto mb-4" />
+                    </motion.div>
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border-2 border-green-200">
+                      <h3 className="font-bold text-xl mb-3">{result.mission.title}</h3>
+                      <div className="flex items-center justify-center gap-2 text-green-700 text-3xl font-bold mb-2">
+                        <Sparkles className="w-8 h-8 animate-pulse" />
+                        +{result.points} poin
+                        <Sparkles className="w-8 h-8 animate-pulse" />
+                      </div>
+                      <p className="text-sm text-gray-600 mt-3">
+                        🎉 Selamat! Misi berhasil diselesaikan
+                      </p>
+                    </div>
+                    <p className="text-sm text-gray-500 animate-pulse">
+                      Mengalihkan ke dashboard...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-28 h-28 text-red-500 mx-auto mb-4" />
+                    <div className="bg-red-50 p-6 rounded-xl border-2 border-red-200">
+                      <p className="font-semibold text-red-700 mb-2 text-lg">Validasi Gagal</p>
+                      <p className="text-sm text-gray-600">{error}</p>
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setResult(null);
+                        setError(null);
+                      }}
+                      className="w-full bg-primary hover:bg-primary-dark"
+                    >
+                      Scan Lagi
+                    </Button>
+                  </>
+                )}
+              </motion.div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Instructions */}
+      {!scanning && !result && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-lg mx-auto"
+        >
+          <Card>
+            <CardContent className="p-4">
+              <h3 className="font-semibold mb-2 flex items-center gap-2">
+                💡 Tips Scan QR Code
+              </h3>
+              <ul className="text-sm text-gray-600 space-y-1">
+                <li>✓ Pastikan QR code terlihat jelas</li>
+                <li>✓ Cukup cahaya di sekitar QR code</li>
+                <li>✓ Jaga jarak 15-30 cm dari kamera</li>
+                <li>✓ QR code tidak tertutup atau rusak</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+export default QRScanner;
