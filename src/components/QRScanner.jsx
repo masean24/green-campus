@@ -19,13 +19,17 @@ const QRScanner = () => {
   const { profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
+  // Ambil daftar kamera saat komponen mount
   useEffect(() => {
-    // Get available cameras
     Html5Qrcode.getCameras().then(devices => {
       if (devices && devices.length) {
         setCameras(devices);
-        // Prefer back camera (environment)
-        const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
+        // Prefer kamera belakang
+        const backCamera = devices.find(
+          d =>
+            d.label.toLowerCase().includes('back') ||
+            d.label.toLowerCase().includes('environment')
+        );
         setSelectedCamera(backCamera?.id || devices[0].id);
       }
     }).catch(err => {
@@ -33,72 +37,67 @@ const QRScanner = () => {
       setError('Tidak dapat mengakses kamera. Pastikan browser memiliki izin.');
     });
 
-    // Cleanup on unmount
+    // Clean up
     return () => {
       if (scannerRef.current) {
-        scannerRef.current.stop().catch(e => console.log(e));
+        scannerRef.current.stop().catch(() => {});
+        scannerRef.current = null;
       }
     };
   }, []);
 
-  const startScanning = async () => {
-    if (!selectedCamera) {
-      setError('Kamera tidak tersedia');
-      return;
+  // start scanner di useEffect setelah <div id="qr-reader" /> render
+  useEffect(() => {
+    if (scanning) {
+      const timer = setTimeout(() => {
+        const qrDiv = document.getElementById('qr-reader');
+        if (qrDiv && selectedCamera) {
+          const html5QrCode = new Html5Qrcode('qr-reader');
+          scannerRef.current = html5QrCode;
+          html5QrCode
+            .start(
+              selectedCamera,
+              { fps: 10, qrbox: { width: 250, height: 250 } },
+              onScanSuccess,
+              onScanError
+            )
+            .catch(err => {
+              setError('Gagal membuka kamera.');
+              setScanning(false);
+            });
+        }
+      }, 200);
+
+      return () => clearTimeout(timer);
     }
 
-    try {
-      const html5QrCode = new Html5Qrcode("qr-reader");
-      scannerRef.current = html5QrCode;
-
-      await html5QrCode.start(
-        selectedCamera,
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
-        },
-        onScanSuccess,
-        onScanError
-      );
-
-      setScanning(true);
-      setError(null);
-    } catch (err) {
-      console.error('Error starting scanner:', err);
-      setError('Gagal membuka kamera. Pastikan Anda mengizinkan akses kamera.');
+    // Jangan lupa stop scanner kalau scanning berubah/jadi false
+    if (!scanning && scannerRef.current) {
+      scannerRef.current.stop().catch(() => {});
+      scannerRef.current = null;
     }
-  };
+  }, [scanning, selectedCamera]);
 
-  const stopScanning = async () => {
+  const onScanSuccess = async decodedText => {
+    // stop scanner segera
     if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-        scannerRef.current = null;
-      } catch (e) {
-        console.log('Error stopping scanner:', e);
-      }
+      await scannerRef.current.stop();
+      scannerRef.current = null;
     }
     setScanning(false);
-  };
-
-  const onScanSuccess = async (decodedText) => {
-    // Stop scanner immediately
-    await stopScanning();
-    
-    // Process QR code
     validateAndProcessQR(decodedText);
   };
 
-  const onScanError = (error) => {
-    // Ignore scan errors (too frequent)
+  const onScanError = error => {
+    // optional: tampilkan/log error scan (biasanya no problem)
   };
 
-  const validateAndProcessQR = async (qrCode) => {
+  const validateAndProcessQR = async qrCode => {
     setProcessing(true);
     setError(null);
 
     try {
-      // Validate QR code
+      // Validasi QR code
       const { data: missionData, error: missionError } = await supabase
         .from('missions')
         .select('*')
@@ -110,7 +109,7 @@ const QRScanner = () => {
         throw new Error('QR Code tidak valid atau misi tidak aktif ❌');
       }
 
-      // Check if already completed
+      // Cek sudah pernah kerjakan misi?
       const { data: existingMission } = await supabase
         .from('user_missions')
         .select('id')
@@ -122,7 +121,7 @@ const QRScanner = () => {
         throw new Error('Misi ini sudah pernah kamu selesaikan! 🔁');
       }
 
-      // Award points
+      // Beri poin (insert ke user_missions)
       const { error: insertError } = await supabase
         .from('user_missions')
         .insert({
@@ -134,7 +133,7 @@ const QRScanner = () => {
 
       if (insertError) throw insertError;
 
-      // Update profile points
+      // Update points profile
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -151,15 +150,10 @@ const QRScanner = () => {
         mission: missionData,
         points: missionData.points
       });
-
-      // Refresh profile
       refreshProfile();
-
-      // Redirect after 3 seconds
       setTimeout(() => {
         navigate('/dashboard');
       }, 3000);
-
     } catch (err) {
       setError(err.message || 'Terjadi kesalahan saat validasi QR Code');
       setResult({ success: false });
@@ -168,25 +162,25 @@ const QRScanner = () => {
     }
   };
 
+  const stopScanning = () => {
+    if (scannerRef.current) {
+      scannerRef.current.stop().catch(() => {});
+      scannerRef.current = null;
+    }
+    setScanning(false);
+  };
+
   const switchCamera = async () => {
     if (cameras.length <= 1) return;
-
-    const currentIndex = cameras.findIndex(c => c.id === selectedCamera);
-    const nextIndex = (currentIndex + 1) % cameras.length;
-    const nextCamera = cameras[nextIndex];
-
-    if (scanning) {
-      await stopScanning();
-      setSelectedCamera(nextCamera.id);
-      setTimeout(() => startScanning(), 500);
-    } else {
-      setSelectedCamera(nextCamera.id);
-    }
+    const curIdx = cameras.findIndex(c => c.id === selectedCamera);
+    const nextIdx = (curIdx + 1) % cameras.length;
+    const nextCam = cameras[nextIdx];
+    stopScanning();
+    setTimeout(() => setSelectedCamera(nextCam.id), 100);
   };
 
   return (
     <div className="space-y-6 pb-20 md:pb-6">
-      {/* Loading Overlay */}
       <AnimatePresence mode="wait">
         {processing && (
           <motion.div
@@ -211,7 +205,9 @@ const QRScanner = () => {
           <Camera className="w-8 h-8" />
           Scan QR Code
         </h1>
-        <p className="text-gray-600 mt-2">Arahkan kamera ke QR code di lokasi misi</p>
+        <p className="text-gray-600 mt-2">
+          Arahkan kamera ke QR code di lokasi misi
+        </p>
       </div>
 
       {/* Main Content */}
@@ -224,182 +220,16 @@ const QRScanner = () => {
           <CardHeader className="bg-gradient-to-r from-primary to-primary-dark text-white">
             <CardTitle className="text-center flex items-center justify-center gap-2">
               <Camera className="w-6 h-6" />
-              {scanning ? 'Sedang Memindai...' : result ? (result.success ? '🎉 Berhasil!' : '❌ Gagal') : 'Siap Memindai'}
+              {scanning
+                ? 'Sedang Memindai...'
+                : result
+                ? result.success
+                  ? '🎉 Berhasil!'
+                  : '❌ Gagal'
+                : 'Siap Memindai'}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
             {/* Scanner View */}
             {!result && !scanning && (
-              <div className="text-center space-y-4">
-                <motion.div 
-                  className="w-40 h-40 bg-gradient-to-br from-primary/10 to-primary/20 rounded-3xl flex items-center justify-center mx-auto mb-6"
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  <Camera className="w-20 h-20 text-primary" />
-                </motion.div>
-
-                <div className="space-y-2">
-                  <p className="text-gray-700 font-medium">
-                    📱 Pastikan QR code terlihat jelas
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Browser akan meminta izin akses kamera
-                  </p>
-                </div>
-
-                <Button 
-                  onClick={startScanning}
-                  className="w-full bg-primary hover:bg-primary-dark h-14 text-lg font-semibold"
-                  size="lg"
-                >
-                  <Camera className="w-6 h-6 mr-2" />
-                  Mulai Scan
-                </Button>
-
-                {cameras.length > 1 && (
-                  <Button
-                    onClick={switchCamera}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    <SwitchCamera className="w-5 h-5 mr-2" />
-                    Ganti Kamera ({cameras.findIndex(c => c.id === selectedCamera) + 1}/{cameras.length})
-                  </Button>
-                )}
-
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3"
-                  >
-                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                    <div className="text-left">
-                      <p className="text-sm font-semibold text-red-700 mb-1">Error</p>
-                      <p className="text-xs text-red-600">{error}</p>
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-            )}
-
-            {/* Active Scanning */}
-            {scanning && (
-              <div className="space-y-4">
-                <div id="qr-reader" className="w-full rounded-lg overflow-hidden"></div>
-                
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 text-center">
-                  <p className="text-sm font-semibold text-blue-700 mb-1">
-                    📷 Arahkan ke QR Code
-                  </p>
-                  <p className="text-xs text-blue-600">
-                    Scanner akan otomatis mendeteksi QR code
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  {cameras.length > 1 && (
-                    <Button
-                      onClick={switchCamera}
-                      variant="outline"
-                      className="flex-1"
-                    >
-                      <SwitchCamera className="w-4 h-4 mr-2" />
-                      Ganti Kamera
-                    </Button>
-                  )}
-                  <Button
-                    onClick={stopScanning}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Batal
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Result View */}
-            {result && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-center space-y-4"
-              >
-                {result.success ? (
-                  <>
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-                    >
-                      <CheckCircle className="w-28 h-28 text-green-500 mx-auto mb-4" />
-                    </motion.div>
-                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border-2 border-green-200">
-                      <h3 className="font-bold text-xl mb-3">{result.mission.title}</h3>
-                      <div className="flex items-center justify-center gap-2 text-green-700 text-3xl font-bold mb-2">
-                        <Sparkles className="w-8 h-8 animate-pulse" />
-                        +{result.points} poin
-                        <Sparkles className="w-8 h-8 animate-pulse" />
-                      </div>
-                      <p className="text-sm text-gray-600 mt-3">
-                        🎉 Selamat! Misi berhasil diselesaikan
-                      </p>
-                    </div>
-                    <p className="text-sm text-gray-500 animate-pulse">
-                      Mengalihkan ke dashboard...
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-28 h-28 text-red-500 mx-auto mb-4" />
-                    <div className="bg-red-50 p-6 rounded-xl border-2 border-red-200">
-                      <p className="font-semibold text-red-700 mb-2 text-lg">Validasi Gagal</p>
-                      <p className="text-sm text-gray-600">{error}</p>
-                    </div>
-                    <Button
-                      onClick={() => {
-                        setResult(null);
-                        setError(null);
-                      }}
-                      className="w-full bg-primary hover:bg-primary-dark"
-                    >
-                      Scan Lagi
-                    </Button>
-                  </>
-                )}
-              </motion.div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Instructions */}
-      {!scanning && !result && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-lg mx-auto"
-        >
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-2 flex items-center gap-2">
-                💡 Tips Scan QR Code
-              </h3>
-              <ul className="text-sm text-gray-600 space-y-1">
-                <li>✓ Pastikan QR code terlihat jelas</li>
-                <li>✓ Cukup cahaya di sekitar QR code</li>
-                <li>✓ Jaga jarak 15-30 cm dari kamera</li>
-                <li>✓ QR code tidak tertutup atau rusak</li>
-              </ul>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-    </div>
-  );
-};
-
-export default QRScanner;
+              <div className
