@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Camera, CameraOff, X, CheckCircle, AlertCircle, Sparkles, RotateCw } from 'lucide-react';
+import { Camera, X, CheckCircle, AlertCircle, Sparkles, SwitchCamera } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,16 +10,30 @@ import { supabase } from '../lib/supabase';
 
 const QRScanner = () => {
   const [scanning, setScanning] = useState(false);
-  const [cameraMode, setCameraMode] = useState('environment'); // "environment" = belakang, "user" = depan
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [cameras, setCameras] = useState([]);
+  const [selectedCamera, setSelectedCamera] = useState('');
   const scannerRef = useRef(null);
   const { profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
-  // Clean up scanner on unmount/stop
+  // GET CAMERA LIST
   useEffect(() => {
+    Html5Qrcode.getCameras().then(devices => {
+      setCameras(devices);
+      if (devices && devices.length) {
+        // Otomatis pilih kamera belakang jika ada dari label
+        const backCam = devices.find(d =>
+          d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment')
+        );
+        setSelectedCamera(backCam ? backCam.id : devices[0].id);
+      }
+    }).catch(err => {
+      setError('Tidak dapat mengakses kamera.');
+    });
+
     return () => {
       if (scannerRef.current) {
         scannerRef.current.stop().catch(() => {});
@@ -28,46 +42,41 @@ const QRScanner = () => {
     };
   }, []);
 
-  // Start scanner on state change (cameraMode / scanning)
+  // SCAN with deviceId
   useEffect(() => {
-    if (scanning) {
-      const timer = setTimeout(() => {
+    if (scanning && selectedCamera) {
+      setTimeout(() => {
         const qrDiv = document.getElementById('qr-reader');
         if (qrDiv) {
           const html5QrCode = new Html5Qrcode('qr-reader');
           scannerRef.current = html5QrCode;
-          html5QrCode
-            .start(
-              { facingMode: cameraMode }, // "user" (depan) atau "environment" (belakang)
-              {
-                fps: 12,
-                qrbox: { width: 250, height: 250 },
-                aspectRatio: 1.0,
-                videoConstraints: {
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 }
-                }
-              },
-              onScanSuccess,
-              onScanError
-            )
-            .catch(() => {
-              setError('Gagal membuka kamera.');
-              setScanning(false);
-            });
+          html5QrCode.start(
+            { deviceId: { exact: selectedCamera } },
+            {
+              fps: 12,
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0,
+              videoConstraints: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+              }
+            },
+            onScanSuccess,
+            onScanError
+          ).catch(() => {
+            setError('Gagal membuka kamera.');
+            setScanning(false);
+          });
         }
-      }, 250);
-
-      return () => clearTimeout(timer);
+      }, 200);
     }
-    // Stop scanner jika scanning menjadi false
     if (!scanning && scannerRef.current) {
       scannerRef.current.stop().catch(() => {});
       scannerRef.current = null;
     }
-  }, [scanning, cameraMode]);
+  }, [scanning, selectedCamera]);
 
-  const onScanSuccess = async (decodedText) => {
+  const onScanSuccess = async decodedText => {
     if (scannerRef.current) {
       await scannerRef.current.stop();
       scannerRef.current = null;
@@ -76,14 +85,11 @@ const QRScanner = () => {
     validateAndProcessQR(decodedText);
   };
 
-  const onScanError = (error) => {
-    // ignore
-  };
+  const onScanError = error => {};
 
-  const validateAndProcessQR = async (qrCode) => {
+  const validateAndProcessQR = async qrCode => {
     setProcessing(true);
     setError(null);
-
     try {
       const { data: missionData, error: missionError } = await supabase
         .from('missions')
@@ -137,6 +143,7 @@ const QRScanner = () => {
       setTimeout(() => {
         navigate('/dashboard');
       }, 3000);
+
     } catch (err) {
       setError(err.message || 'Terjadi kesalahan saat validasi QR Code');
       setResult({ success: false });
@@ -153,23 +160,19 @@ const QRScanner = () => {
     setScanning(false);
   };
 
-  // UI Button camera switch
-  const handleSwitchCamera = () => {
-    setCameraMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
-    setScanning(false);
-    setTimeout(() => setScanning(true), 200); // restart scan with new facingMode
+  // Ganti kamera dari dropdown
+  const handleCameraChange = e => {
+    stopScanning();
+    setSelectedCamera(e.target.value);
+    setTimeout(() => setScanning(true), 250);
   };
 
   return (
     <div className="space-y-6 pb-20 md:pb-6">
       <AnimatePresence mode="wait">
         {processing && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" >
             <Card className="w-64">
               <CardContent className="p-6 text-center">
                 <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -179,16 +182,14 @@ const QRScanner = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
       <div className="text-center md:text-left">
         <h1 className="text-2xl md:text-3xl font-bold text-primary flex items-center justify-center md:justify-start gap-2">
           <Camera className="w-8 h-8" />
           Scan QR Code
         </h1>
-        <p className="text-gray-600 mt-2">
-          Arahkan kamera ke QR code di lokasi misi
-        </p>
+        <p className="text-gray-600 mt-2">Arahkan kamera ke QR code di lokasi misi</p>
       </div>
-
       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto">
         <Card className="shadow-lg overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-primary to-primary-dark text-white">
@@ -204,58 +205,43 @@ const QRScanner = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
-            {/* Scanner Standby & Buttons */}
+            {/* Select Kamera */}
+            {cameras.length > 1 && !scanning && (
+              <div className="mb-4">
+                <label className="block text-sm text-primary font-semibold mb-1">
+                  Pilih Kamera:
+                </label>
+                <select
+                  value={selectedCamera}
+                  onChange={handleCameraChange}
+                  className="border rounded-lg w-full px-3 py-2"
+                >
+                  {cameras.map(cam => (
+                    <option value={cam.id} key={cam.id}>
+                      {cam.label || 'Kamera'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {/* Scanner Standby & Button */}
             {!result && !scanning && (
               <div className="text-center space-y-4">
-                <motion.div
-                  className="w-40 h-40 bg-gradient-to-br from-primary/10 to-primary/20 rounded-3xl flex items-center justify-center mx-auto mb-6"
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
+                <motion.div className="w-40 h-40 bg-gradient-to-br from-primary/10 to-primary/20 rounded-3xl flex items-center justify-center mx-auto mb-6"
+                  animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }}>
                   <Camera className="w-20 h-20 text-primary" />
                 </motion.div>
-                <div className="space-y-2">
-                  <p className="text-gray-700 font-medium">
-                    📱 Pilih Kamera lalu klik scan
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Browser akan meminta izin akses kamera
-                  </p>
-                </div>
-                <div className="flex gap-3 justify-center">
-                  <Button
-                    onClick={() => {
-                      setCameraMode('environment');
-                      setScanning(true);
-                      setError(null);
-                    }}
-                  >
-                    <Camera className="w-5 h-5 mr-1" />
-                    Kamera Belakang
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setCameraMode('user');
-                      setScanning(true);
-                      setError(null);
-                    }}
-                    variant="secondary"
-                  >
-                    <CameraOff className="w-5 h-5 mr-1" />
-                    Kamera Depan
-                  </Button>
-                </div>
+                <Button onClick={() => {setScanning(true);setError(null);}}
+                  className="w-full bg-primary h-14 text-lg font-semibold">
+                  <Camera className="w-6 h-6 mr-2" />
+                  Mulai Scan
+                </Button>
                 {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3"
-                  >
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+                    className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3 mt-4">
                     <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                    <div className="text-left">
-                      <p className="text-sm font-semibold text-red-700 mb-1">Error</p>
-                      <p className="text-xs text-red-600">{error}</p>
-                    </div>
+                    <div className="text-left"><p className="text-sm font-semibold text-red-700 mb-1">Error</p>
+                      <p className="text-xs text-red-600">{error}</p></div>
                   </motion.div>
                 )}
               </div>
@@ -269,48 +255,40 @@ const QRScanner = () => {
                     📷 Arahkan ke QR Code
                   </p>
                   <p className="text-xs text-blue-600">Scanner akan otomatis mendeteksi QR code</p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Sedang pakai kamera: <b>{cameraMode === 'user' ? "Depan" : "Belakang"}</b>
+                  <p className="text-xs text-gray-500 mt-2">
+                    <b>Perangkat:</b> {
+                      cameras.find(c => c.id === selectedCamera)?.label || selectedCamera
+                    }
                   </p>
                 </div>
-                <div className="flex gap-2 mt-2">
-                  <Button
-                    onClick={stopScanning}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Batal
-                  </Button>
-                  <Button
-                    onClick={handleSwitchCamera}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    <RotateCw className="w-4 h-4 mr-2" />
-                    Ganti Kamera
-                  </Button>
-                </div>
+                <Button onClick={stopScanning} variant="outline" className="w-full">
+                  <X className="w-4 h-4 mr-2" />
+                  Batal
+                </Button>
+                {cameras.length > 1 && (
+                  <div>
+                    <label className="block text-sm text-primary font-semibold mb-1">
+                      Ganti Kamera:
+                    </label>
+                    <select value={selectedCamera} onChange={handleCameraChange}
+                      className="border rounded-lg w-full px-3 py-2">
+                      {cameras.map(cam => (
+                        <option value={cam.id} key={cam.id}>
+                          {cam.label || 'Kamera'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
-
+            {/* Result */}
             {result && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-center space-y-4"
-              >
+              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center space-y-4">
                 {result.success ? (
                   <>
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{
-                        delay: 0.2,
-                        type: 'spring',
-                        stiffness: 200
-                      }}
-                    >
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+                      transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}>
                       <CheckCircle className="w-28 h-28 text-green-500 mx-auto mb-4" />
                     </motion.div>
                     <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border-2 border-green-200">
@@ -335,13 +313,11 @@ const QRScanner = () => {
                       <p className="font-semibold text-red-700 mb-2 text-lg">Validasi Gagal</p>
                       <p className="text-sm text-gray-600">{error}</p>
                     </div>
-                    <Button
-                      onClick={() => {
-                        setResult(null);
-                        setError(null);
-                      }}
-                      className="w-full bg-primary hover:bg-primary-dark"
-                    >
+                    <Button onClick={() => {
+                      setResult(null);
+                      setError(null);
+                    }}
+                      className="w-full bg-primary hover:bg-primary-dark">
                       Scan Lagi
                     </Button>
                   </>
@@ -352,12 +328,9 @@ const QRScanner = () => {
         </Card>
       </motion.div>
 
+      {/* Instructions */}
       {!scanning && !result && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-lg mx-auto"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-lg mx-auto">
           <Card>
             <CardContent className="p-4">
               <h3 className="font-semibold mb-2 flex items-center gap-2">
