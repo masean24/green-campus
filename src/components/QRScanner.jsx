@@ -68,11 +68,11 @@ const QRScanner = () => {
   },
   onScanSuccess,
   onScanError
-);
-            .catch(err => {
-              setError('Gagal membuka kamera.');
-              setScanning(false);
-            });
+)
+.catch(err => {
+  setError('Gagal membuka kamera.');
+  setScanning(false);
+});
         }
       }, 200);
 
