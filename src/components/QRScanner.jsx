@@ -54,13 +54,21 @@ const QRScanner = () => {
         if (qrDiv && selectedCamera) {
           const html5QrCode = new Html5Qrcode('qr-reader');
           scannerRef.current = html5QrCode;
-          html5QrCode
-            .start(
-              selectedCamera,
-              { fps: 10, qrbox: { width: 250, height: 250 } },
-              onScanSuccess,
-              onScanError
-            )
+         html5QrCode.start(
+  { deviceId: { exact: selectedCamera } },
+  { 
+    fps: 10, 
+    qrbox: { width: 250, height: 250 }, 
+    aspectRatio: 1.0,
+    facingMode: "environment",
+    videoConstraints: {
+      width: { ideal: 1280 }, 
+      height: { ideal: 720 }
+    }
+  },
+  onScanSuccess,
+  onScanError
+);
             .catch(err => {
               setError('Gagal membuka kamera.');
               setScanning(false);
